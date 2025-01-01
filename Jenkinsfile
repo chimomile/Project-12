@@ -1,50 +1,63 @@
 pipeline {
     agent any
-
+    
+    environment {
+        DOCKER_IMAGE = "techikariskasari/project-12:latest"
+        DOCKER_CONTAINER = "project-12"
+        PORT_MAPPING = "8089:80"
+    }
+    
     stages {
-        stage('Checkout Code') {
+        stage("Clone Repository") {
             steps {
-                echo 'Checking out code from GitHub...'
-                checkout scm
+                // Clean workspace before cloning
+                cleanWs()
+                checkout([$class: 'GitSCM', 
+                    branches: [[name: '*/main']], 
+                    userRemoteConfigs: [[url: 'https://github.com/chimomile/Project-12.git']]
+                ])
             }
         }
-
-        stage('Build Docker Image') {
+        
+        stage("Build Docker Image") {
             steps {
-                echo 'Building Docker image...'
                 script {
-                    // Build Docker image dengan tag "test-image"
-                    docker.build('test-image')
+                    bat "docker build -t ${env.DOCKER_IMAGE} ."
                 }
             }
         }
-
-        stage('Run Docker Container') {
+        
+        stage("Clean Previous Container") {
             steps {
-                echo 'Running Docker container...'
                 script {
-                    // Menjalankan container sementara dari image "test-image"
-                    def container = docker.image('test-image').run('-d')
-                    sh 'docker ps' // Menampilkan daftar container yang berjalan
+                    // Using Windows batch commands
+                    bat """
+                        docker ps -q --filter name=${env.DOCKER_CONTAINER} && docker stop ${env.DOCKER_CONTAINER} || exit 0
+                        docker ps -aq --filter name=${env.DOCKER_CONTAINER} && docker rm ${env.DOCKER_CONTAINER} || exit 0
+                    """
                 }
             }
         }
-
-        stage('Clean Up') {
+        
+        stage("Run Docker Container") {
             steps {
-                echo 'Cleaning up Docker resources...'
                 script {
-                    // Menghapus container dan image setelah pengujian
-                    sh 'docker rm -f $(docker ps -aq)'
-                    sh 'docker rmi -f test-image'
+                    bat "docker run -d --name ${env.DOCKER_CONTAINER} -p ${env.PORT_MAPPING} ${env.DOCKER_IMAGE}"
                 }
             }
         }
     }
-
+    
     post {
         always {
-            echo 'Pipeline test completed.'
+            // Clean up old images
+            bat "docker image prune -f"
+        }
+        failure {
+            echo 'Pipeline failed!'
+        }
+        success {
+            echo 'Pipeline succeeded! Website deployed.'
         }
     }
 }
